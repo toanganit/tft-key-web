@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com; form-action 'none'; base-uri 'none'">
+  <title>Quản lý key TFT</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #0d1420; color: #f1f6fc; }
+    body { max-width: 68rem; margin: auto; padding: 2rem 1rem 4rem; }
+    header { margin-bottom: 1.5rem; }
+    h1 { font-size: clamp(2rem, 6vw, 3.5rem); margin: 0; letter-spacing: -.055em; }
+    h2 { font-size: 1.2rem; margin: 0 0 1rem; }
+    p { margin: .5rem 0 1rem; }
+    section { border: 1px solid #344357; border-radius: 1rem; background: #161f2d; padding: 1.25rem; }
+    #workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; }
+    #workspace[hidden], [hidden] { display: none; }
+    a { color: #91f1d3; text-underline-offset: .18em; }
+    .muted { color: #b5c2d5; }
+    label { display: block; margin-bottom: .75rem; }
+    input, select, textarea, button { font: inherit; border: 1px solid #63748a; border-radius: .55rem; box-sizing: border-box; min-height: 2.75rem; padding: .55rem .75rem; }
+    input, select, textarea { width: 100%; display: block; margin-top: .25rem; background: #0d1420; color: inherit; }
+    textarea { resize: vertical; }
+    button { background: #90f1d2; color: #09261f; border-color: transparent; font-weight: 700; cursor: pointer; }
+    button.secondary { background: #26364b; color: #f1f6fc; border-color: #63748a; }
+    button:disabled { opacity: .55; cursor: wait; }
+    :focus-visible { outline: 2px solid #9ef3d9; outline-offset: 3px; }
+    .row { display: flex; gap: .65rem; flex-wrap: wrap; align-items: center; }
+    .fields { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #message { margin: 1rem 0; min-height: 1.5em; }
+    #message.error { color: #ffbaba; }
+    .list { display: grid; gap: .65rem; margin-top: .9rem; }
+    article { padding: .85rem; border: 1px solid #344357; border-radius: .65rem; overflow-wrap: anywhere; }
+    article p { margin: .25rem 0 .75rem; }
+    article button { margin-right: .5rem; }
+    #repo-link { margin-left: auto; }
+    @media (max-width: 43rem) { #workspace { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row"><span class="muted">Thiên Hạ Nhân</span><a id="repo-link" href="https://github.com/toanganit/tft-keys/actions/workflows/manage-key.yml" target="_blank" rel="noopener noreferrer">GitHub Actions</a></div>
+    <h1>Quản lý key TFT</h1>
+  </header>
+
+  <section id="connection" aria-labelledby="connect-title">
+    <h2 id="connect-title">Kết nối sổ khách</h2>
+    <p class="muted">Dùng token GitHub fine-grained chỉ cho repo <strong>tft-keys</strong> với <strong>Contents: Read-only</strong> và <strong>Actions: Read and write</strong>. Token chỉ giữ trong phiên mở trang.</p>
+    <form id="connect-form" method="post">
+      <label>Token GitHub<input id="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required></label>
+      <div class="row">
+        <button id="connect-button">Kết nối</button>
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Tạo token GitHub</a>
+      </div>
+    </form>
+  </section>
+
+  <div id="message" role="status" aria-live="polite"></div>
+  <p id="run-result" hidden><a id="run-link" target="_blank" rel="noopener noreferrer">Mở kết quả trên GitHub</a></p>
+
+  <div id="workspace" hidden>
+    <section aria-labelledby="action-title">
+      <h2 id="action-title">Thao tác với key</h2>
+      <form id="action-form" method="post">
+        <label>Thao tác
+          <select id="action" name="action">
+            <option value="issue">Cấp key</option><option value="renew">Gia hạn</option>
+            <option value="activate">Ghi nhận kích hoạt</option><option value="revoke">Đánh dấu thu hồi</option>
+          </select>
+        </label>
+        <label>Mã máy<input id="machine" name="machine" placeholder="ABCD-EFGH-IJKL-MNOP" autocomplete="off" maxlength="40" required></label>
+        <div id="issue-fields">
+          <label>Tên khách<input name="name" maxlength="200"></label>
+          <label>Liên hệ<input name="contact" maxlength="200"></label>
+          <div class="fields">
+            <label>Số ngày<input type="number" name="days" min="0" max="65535" value="3" required></label>
+            <label>Hạn cứng (ngày)<input type="number" name="hard_days" min="0" value="0" required></label>
+          </div>
+          <label>Ghi chú<textarea name="note" rows="2" maxlength="500"></textarea></label>
+          <p class="muted">Số ngày 0 là vĩnh viễn. Hạn cứng 0 là không đặt hạn cứng.</p>
+        </div>
+        <p id="offline-note" class="muted" hidden>Ứng dụng khách chạy offline. Thao tác này chỉ cập nhật sổ khách trên GitHub.</p>
+        <button id="submit-action">Gửi yêu cầu</button>
+      </form>
+    </section>
+
+    <section aria-labelledby="customers-title">
+      <h2 id="customers-title">Sổ khách</h2>
+      <label>Tìm theo tên, mã máy hoặc liên hệ<input id="query" type="search" autocomplete="off"></label>
+      <div class="row">
+        <button id="refresh" class="secondary" type="button">Làm mới</button>
+        <button id="disconnect" class="secondary" type="button">Ngắt kết nối</button>
+        <span class="muted" id="count" aria-live="polite"></span>
+      </div>
+      <div class="list" id="customers"></div>
+    </section>
+  </div>
+
+  <script>
+    'use strict';
+    const repo = 'toanganit/tft-keys';
+    const workflow = '/actions/workflows/manage-key.yml';
+    const byId = id => document.getElementById(id);
+    const action = byId('action');
+    const actionForm = byId('action-form');
+    let session;
+    let customers = [];
+
+    function showMessage(text, error = false) {
+      byId('message').textContent = text;
+      byId('message').classList.toggle('error', error);
+    }
+
+    async function api(connection, path, { body, accept = 'application/vnd.github+json' } = {}) {
+      const headers = {
+        'Accept': accept,
+        'Authorization': `Bearer ${connection.token}`,
+        'X-GitHub-Api-Version': '2026-03-10',
+      };
+      if (body) headers['Content-Type'] = 'application/json';
+      const response = await fetch(`https://api.github.com/repos/${repo}${path}`, {
+        method: body ? 'POST' : 'GET', headers, body: body && JSON.stringify(body),
+        signal: connection.controller.signal, cache: 'no-store', redirect: 'error',
+      });
+      if (!response.ok) {
+        const reasons = {
+          401: 'Token hết hạn hoặc không hợp lệ.',
+          403: 'GitHub từ chối yêu cầu. Kiểm tra quyền token hoặc hạn mức API.',
+          404: 'GitHub không tìm thấy tài nguyên. Kiểm tra token có quyền vào repo tft-keys.',
+          422: 'GitHub không chấp nhận yêu cầu. Kiểm tra các dữ liệu vừa nhập.',
+        };
+        throw new Error(reasons[response.status] || `GitHub trả lỗi HTTP ${response.status}.`);
+      }
+      return response.status === 204 ? null : response.json();
+    }
+
+    async function readCustomers(connection) {
+      const data = await api(connection, '/contents/customers.json?ref=main', { accept: 'application/vnd.github.raw+json' });
+      if (!Array.isArray(data.customers)) throw new Error('Sổ khách có định dạng không hợp lệ.');
+      if (session === connection) {
+        customers = data.customers;
+        renderCustomers();
+      }
+    }
+
+    function normalizedMachine(text) {
+      return text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+
+    function keyStatus(key, now = Date.now()) {
+      if (!key) return 'Chưa có key';
+      if (key.revoked) return 'Đã đánh dấu thu hồi';
+      const day = 86_400_000;
+      const hardLimit = key.hard_expires ? Date.parse(`${key.hard_expires}T00:00:00Z`) + day : Infinity;
+      const days = Number(key.valid_days);
+      const activatedAt = Number(key.activated_at);
+      const softLimit = days && activatedAt ? activatedAt * 1000 + days * day : Infinity;
+      const limit = Math.min(hardLimit, softLimit);
+      if (now >= limit) return 'Hết hạn';
+      if (days && !activatedAt) return 'Chưa kích hoạt';
+      if (limit === Infinity) return 'Vĩnh viễn';
+      return limit - now <= day ? 'Sắp hết hạn' : 'Đang dùng';
+    }
+
+    function renderCustomers() {
+      const query = byId('query').value.trim().toLocaleLowerCase('vi');
+      const machineQuery = normalizedMachine(query);
+      const matches = customers.filter(customer => !query ||
+        (machineQuery && customer.machine.includes(machineQuery)) ||
+        [customer.name, customer.contact, customer.note].some(value => value?.toLocaleLowerCase('vi').includes(query)));
+      byId('count').textContent = `${matches.length} / ${customers.length} khách`;
+      const list = byId('customers');
+      list.replaceChildren();
+      if (!matches.length) list.textContent = query ? 'Không tìm thấy khách.' : 'Chưa có khách.';
+      for (const customer of matches) {
+        const latest = customer.keys?.at(-1);
+        const machine = customer.machine.match(/.{1,4}/g)?.join('-') || customer.machine;
+        const card = document.createElement('article');
+        const title = document.createElement('strong');
+        title.textContent = customer.name || machine;
+        const detail = document.createElement('p');
+        detail.className = 'muted';
+        detail.textContent = [machine, customer.contact, keyStatus(latest)].filter(Boolean).join(' · ');
+        const pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'secondary';
+        pick.textContent = 'Dùng mã máy';
+        pick.addEventListener('click', () => {
+          byId('machine').value = machine;
+          byId('machine').focus();
+        });
+        card.append(title, detail, pick);
+        if (latest?.key) {
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.className = 'secondary';
+          copy.textContent = 'Sao chép key mới nhất';
+          copy.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(latest.key);
+              showMessage('Đã sao chép key mới nhất.');
+            } catch {
+              showMessage('Không sao chép được. Mở Summary của lượt cấp key để sao chép.', true);
+            }
+          });
+          card.append(copy);
+        }
+        list.append(card);
+      }
+    }
+
+    function resetSession() {
+      session?.controller.abort();
+      session = undefined;
+      customers = [];
+      actionForm.reset();
+      updateActionFields();
+      byId('query').value = '';
+      byId('customers').replaceChildren();
+      byId('count').textContent = '';
+      byId('workspace').hidden = true;
+      byId('connection').hidden = false;
+      byId('run-result').hidden = true;
+      byId('run-link').removeAttribute('href');
+    }
+
+    byId('connect-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const input = byId('token');
+      const token = input.value.trim();
+      input.value = '';
+      if (!/^github_pat_[A-Za-z0-9_]+$/.test(token)) {
+        showMessage('Nhập token fine-grained bắt đầu bằng github_pat_.', true);
+        return;
+      }
+      const connection = { token, controller: new AbortController() };
+      session = connection;
+      byId('connect-button').disabled = true;
+      showMessage('Đang kết nối với GitHub…');
+      try {
+        const repository = await api(connection, '');
+        if (repository.private !== true) throw new Error('Repo tft-keys phải ở chế độ private.');
+        const definition = await api(connection, workflow);
+        if (definition.state !== 'active') throw new Error('Workflow quản lý key chưa được bật.');
+        await readCustomers(connection);
+        byId('connection').hidden = true;
+        byId('workspace').hidden = false;
+        showMessage('Đã kết nối.');
+      } catch (error) {
+        resetSession();
+        showMessage(error.message, true);
+      } finally {
+        byId('connect-button').disabled = false;
+      }
+    });
+
+    byId('disconnect').addEventListener('click', () => {
+      resetSession();
+      showMessage('Đã ngắt kết nối.');
+      byId('token').focus();
+    });
+    byId('query').addEventListener('input', renderCustomers);
+    byId('refresh').addEventListener('click', async () => {
+      const connection = session;
+      if (!connection) return;
+      byId('refresh').disabled = true;
+      try {
+        await readCustomers(connection);
+        if (session === connection) showMessage('Đã cập nhật sổ khách.');
+      } catch (error) {
+        if (session === connection) showMessage(error.message, true);
+      } finally {
+        byId('refresh').disabled = false;
+      }
+    });
+
+    function updateActionFields() {
+      const signing = action.value === 'issue' || action.value === 'renew';
+      byId('issue-fields').hidden = !signing;
+      byId('offline-note').hidden = signing;
+      for (const input of byId('issue-fields').querySelectorAll('input, textarea')) input.disabled = !signing;
+    }
+    action.addEventListener('change', updateActionFields);
+
+    actionForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const connection = session;
+      const submit = byId('submit-action');
+      if (!connection || submit.disabled) return;
+      const inputs = Object.fromEntries(new FormData(actionForm));
+      inputs.machine = normalizedMachine(inputs.machine);
+      if (inputs.machine.length !== 16) {
+        showMessage('Mã máy phải gồm 16 ký tự chữ hoặc số.', true);
+        byId('machine').focus();
+        return;
+      }
+      if (Number(inputs.hard_days) > 0 && Number(inputs.hard_days) < Number(inputs.days)) {
+        showMessage('Hạn cứng phải bằng hoặc lớn hơn số ngày sử dụng.', true);
+        actionForm.elements.hard_days.focus();
+        return;
+      }
+      if (inputs.action === 'revoke' && !confirm(`Đánh dấu thu hồi key mới nhất của máy ${inputs.machine}?`)) return;
+      submit.disabled = true;
+      byId('run-result').hidden = true;
+      showMessage('Đang gửi yêu cầu tới GitHub…');
+      let dispatched = false;
+      try {
+        const result = await api(connection, `${workflow}/dispatches`, { body: { ref: 'main', inputs } });
+        dispatched = true;
+        if (session !== connection) return;
+        const runId = result?.workflow_run_id;
+        byId('run-link').href = Number.isSafeInteger(runId) ?
+          `https://github.com/${repo}/actions/runs/${runId}` : byId('repo-link').href;
+        byId('run-result').hidden = false;
+        if (!Number.isSafeInteger(runId)) {
+          showMessage('GitHub đã nhận yêu cầu. Mở GitHub Actions để theo dõi lượt chạy.');
+          return;
+        }
+        showMessage('GitHub đang xử lý yêu cầu…');
+        for (let attempt = 0; attempt < 30; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 4000));
+          if (session !== connection) return;
+          const run = await api(connection, `/actions/runs/${runId}`);
+          if (run.status !== 'completed') continue;
+          if (run.conclusion !== 'success') {
+            showMessage('Lượt chạy không hoàn tất thành công. Mở kết quả trên GitHub để xem chi tiết.', true);
+            return;
+          }
+          await readCustomers(connection);
+          if (session === connection) {
+            byId('query').value = inputs.machine;
+            renderCustomers();
+            showMessage('Đã xử lý xong. Xem khách bên dưới hoặc mở Summary của lượt chạy.');
+          }
+          return;
+        }
+        showMessage('GitHub vẫn đang xử lý. Mở kết quả trên GitHub để theo dõi.');
+      } catch (error) {
+        if (session === connection) {
+          showMessage(dispatched ? `Đã gửi yêu cầu. Không cập nhật được trạng thái. ${error.message}` :
+            `${error.message} Kiểm tra GitHub Actions trước khi gửi lại.`, true);
+        }
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
